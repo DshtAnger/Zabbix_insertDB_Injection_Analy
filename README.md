@@ -21,7 +21,8 @@ Docker
 ubuntu 14.04
 zabbix `3.0.3` 源码编译安装
 
-`tar -zxvf zabbix-3.0.3.tar.gz`
+`tar -zxvf zabbix-3.0.3.tar.gz`  
+
 `cd zabbix-3.0.3/database/mysql`
 
 配置数据库：
@@ -40,17 +41,22 @@ shell> mysql -uzabbix -p<password> zabbix < data.sql
 `./configure --enable-server --enable-agent --enable-java --with-unixodbc --with-mysql --with-libcurl --with-libxml2 --with-openssl --with-net-snmp --with-ldap`
 
 编译过程可能遇到如下依赖问题：
-1. configure: error: MySQL library not found
+1. configure: error: MySQL library not found  
 `apt-getinstall libmysqld-dev`
-2. configure: error: unixODBC library not found
+
+2. configure: error: unixODBC library not found  
 `apt-get install unixodbc-dev`
-3. configure: error: Curl library not found
+
+3. configure: error: Curl library not found  
 `apt-get install libcurl3-dev`
-4. configure: error: Unable to find "javac"executable in path
+
+4. configure: error: Unable to find "javac"executable in path  
 `apt-get install openjdk-7-jdk`
-5. configure: error: Invalid Net-SNMP directory - unableto find net-snmp-config
+
+5. configure: error: Invalid Net-SNMP directory - unableto find net-snmp-config  
 `apt-get install libsnmp-dev,snmp`
-6. configure: error: Invalid LDAP directory - unable tofind ldap.h
+
+6. configure: error: Invalid LDAP directory - unable tofind ldap.h  
 `apt-getinstall libldap2-dev`
 
 安装：
