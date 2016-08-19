@@ -40,7 +40,8 @@ shell> mysql -uzabbix -p<password> zabbix < data.sql
 编译：
 `./configure --enable-server --enable-agent --enable-java --with-unixodbc --with-mysql --with-libcurl --with-libxml2 --with-openssl --with-net-snmp --with-ldap`
 
-编译过程可能遇到如下依赖问题：
+编译过程可能遇到如下依赖问题：  
+
 1. configure: error: MySQL library not found  
 `apt-getinstall libmysqld-dev`
 
