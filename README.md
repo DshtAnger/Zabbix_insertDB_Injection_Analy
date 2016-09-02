@@ -43,7 +43,7 @@ shell> mysql -uzabbix -p<password> zabbix < data.sql
 编译过程可能遇到如下依赖问题：  
 
 1. configure: error: MySQL library not found  
-`apt-getinstall libmysqld-dev`
+`apt-get install libmysqld-dev`
 
 2. configure: error: unixODBC library not found  
 `apt-get install unixodbc-dev`
@@ -74,7 +74,7 @@ DBPassword=zabbix
 
 前端配置文件：
 ```
-# vi /etc/apache2/conf-enabled
+# vi /etc/apache2/conf-enabled/zabbix.conf
 php_value max_execution_time 300
 php_value memory_limit 128M
 php_value post_max_size 16M
@@ -332,43 +332,11 @@ switch ($data['method']) {
 	}
 ......
 ```
-**`$data`获得所有传入参数，可控**  
+**`$data`获得所有传入参数，可控**   
 
-`type`必须传入，且不能为常量`PAGE_TYPE_JSON`(6)，`defines.inc.php`中定义常量
+`type`必须传入，且不能为常量`PAGE_TYPE_JSON`(6)，`defines.inc.php`中定义常量   
 
-当`method`赋值为`screen.get`，调用`CScreenBuilder::getScreen($data)`，跟进到`CScreenBuilder.php`的构造方法：
-```
-public function __construct(array $options = []) {
-	......
-	$this->profileIdx = !empty($options['profileIdx']) ? $options['profileIdx'] : '';
-	$this->profileIdx2 = !empty($options['profileIdx2']) ? $options['profileIdx2'] : null;
-	$this->updateProfile = isset($options['updateProfile']) ? $options['updateProfile'] : true;
-	//关键调用
-	$this->timeline = CScreenBase::calculateTime([
-		'profileIdx' => $this->profileIdx,
-		//关键点
-		'profileIdx2' => $this->profileIdx2,
-		'updateProfile' => $this->updateProfile,
-		'period' => !empty($options['period']) ? $options['period'] : null,
-		'stime' => !empty($options['stime']) ? $options['stime'] : null
-	]);
-}
-```
-如果传入`profileIdx2`参数，它将未经任何过滤地传给`CScreenBase::calculateTime()`，跟进到`CScreenBase.php`中425行
-```
-public static function calculateTime(array $options = []) {
-......
-if ($options['updateProfile'] && !empty($options['profileIdx'])) {
-		//关键点
-		CProfile::update($options['profileIdx'].'.period', $options['period'], PROFILE_TYPE_INT, $options['profileIdx2']);
-			}
-	......
-}
-```
-发现`CProfile::update()`被调用，且`$options['profileIdx2']`为第4个参数，即形参`$idx2`。如果再`insertDB()`被调用时，`profileIdx2`参数被带进最终执行语句
-
-
-回到`CScreenBuilder.php`中171行，看其`getScreen()方法`：
+当`method`赋值为`screen.get`，调用`CScreenBuilder::getScreen($data)`，跟进到`CScreenBuilder.php`中171行：
 ```
 public static function getScreen(array $options = []) {
 	......
@@ -386,11 +354,58 @@ public static function getScreen(array $options = []) {
 		}
 }
 ```
-提交参数时如果设置`resourcetype`，然后一系列可能的返回都是一个继承自`CScreenBase`的实例
+提交参数时如果设置`resourcetype`，然后一系列可能的返回都是一个继承自`CScreenBase`的实例，以resourcetype=17为例，CScreenHostTriggers无自己的构造方法，实例化的时候将执行父类CScreenBase的构造方法.
 ```
 class CScreenHostTriggers extends CScreenBase {.....}
 class CScreenHistory extends CScreenBase {......)
 ```
+跟进到`CScreenBase.php`中的构造方法：
+```
+public function __construct(array $options = []) {
+	......
+	// Get resourcetype.
+	if ($this->resourcetype === null && array_key_exists('resourcetype',$this->screenitem)) {
+		$this->resourcetype = $this->screenitem['resourcetype'];
+	}
+	foreach ($this->parameters as $pname => $default_value) {
+		if ($this->required_parameters[$pname]) {
+			$this->$pname = array_key_exists($pname, $options) ? $options[$pname] : $default_value;
+		}
+	}
+
+	// Get page file.
+	if ($this->required_parameters['pageFile'] && $this->pageFile === null) {
+		global $page;
+		$this->pageFile = $page['file'];
+	}
+
+	// Calculate timeline.
+	if ($this->required_parameters['timeline'] && $this->timeline === null) {
+		//关键函数调用calculateTime()
+		$this->timeline = $this->calculateTime([
+			'profileIdx' => $this->profileIdx,
+			//关键参数
+			'profileIdx2' => $this->profileIdx2,
+			'updateProfile' => $this->updateProfile,
+			'period' => array_key_exists('period', $options) ? $options['period'] : null,
+			'stime' => array_key_exists('stime', $options) ? $options['stime'] : null
+		]);
+	}
+}
+```
+如果传入`profileIdx2`参数，它将未经任何过滤地传给`CScreenBase::calculateTime()`，跟进到`CScreenBase.php`中425行
+```
+public static function calculateTime(array $options = []) {
+......
+if ($options['updateProfile'] && !empty($options['profileIdx'])) {
+		//关键点
+		CProfile::update($options['profileIdx'].'.period', $options['period'], PROFILE_TYPE_INT, $options['profileIdx2']);
+			}
+	......
+}
+```
+发现`CProfile::update()`被调用，且`$options['profileIdx2']`为第4个参数，即形参`$idx2`。如果再`insertDB()`被调用时，`profileIdx2`参数被带进最终执行语句.   
+
 返回到`jsrpc.php`中调用`CScreenBuilder::getScreen($data)`后的部分
 ```
 $screenBase = CScreenBuilder::getScreen($data);
@@ -408,12 +423,12 @@ if ($screenBase !== null) {
 }
 ```
 `$screenBase`不能为null意味着必须设置`resourcetype`参数
-要使参数提交结果返回，需要设置`mode`参数不为3或者不设置
+要使参数提交结果返回，需要设置`mode`参数不为3或者不设置   
 
-`jsrpc.php`末尾包含进`page_footer.php`，最终调用缺陷函数`CProfile::insertDB()`，`profileIdx2`参数被执行，产生注入.
+`jsrpc.php`末尾包含进`page_footer.php`，最终调用缺陷函数`CProfile::insertDB()`，`profileIdx2`参数被执行，产生注入.   
 
 总结调用流程：
-`$data = $_REQUEST   --->    CScreenBuilder::__construct()   --->    CScreenBase::calculateTime()   --->   CProfile::update()   --->   CScreenBuilder::getScreen()   --->   require_once()   --->   CProfile::flush()   --->   CProfile::insertDB()   --->   CProfile::DBexecute()`
+`$data = $_REQUEST   --->    CScreenBuilder::getScreen()   --->    CScreenBase::__construct()   --->    CScreenBase::calculateTime()   --->   CProfile::update()   --->   CScreenBase::get()   --->   require_once()   --->   CProfile::flush()   --->   CProfile::insertDB()   --->   CProfile::DBexecute()`   
 
 PoC: 
 ```
